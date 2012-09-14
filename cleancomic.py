@@ -7,6 +7,14 @@ import subprocess
 #from wand.image import Image
 #from wand.display import display
 
+# TODO: Cbz not found: doesn't do anything
+# TODO: Use Wand
+# TODO: --contrast
+# TODO: --pretend
+# TODO: check destination exists
+# TODO: add % fuzz (trim imagemagick)
+
+
 # Process arguments
 def processArguments():
 	parser = argparse.ArgumentParser(description="Cleans up CBZ files for better reading on eReaders")
@@ -24,7 +32,9 @@ def processArguments():
 	actions.add_argument("-t", "--trim",
 						help="Attempts to trim white space",
 						action="store_true")
-						# TODO add % fuzz (imagemagick)
+	actions.add_argument("-r", "--right",
+						help="Specify this is a right-to-left book. --trim and --split will take this into account.",
+						action="store_true")
 	actions.add_argument("-s", "--split",
 						help="Split pages vertically, in the middle (for side-by-side page scans)",
 						action="store_true")
@@ -44,61 +54,76 @@ def cleanOne(comic_path):
 		# 0. Init
 		(cbz_dir, cbz_name) = os.path.split(comic_path)
 		(cbz_basename, cbz_extension) = os.path.splitext(cbz_name)
+		
+		# Create "<cbz_name>" dir inside <tmp dir> (for the zip)
 		cbz_work_dir = tempfile.mkdtemp()
 		os.mkdir("%s/%s" % (cbz_work_dir, cbz_basename))
 		cbz_work_dir = "%s/%s" % (cbz_work_dir, cbz_basename)
 		print "The cbz_work_dir: %s" % cbz_work_dir
 		
 		# 1. Extract
-		# print comic_path
-		# cbz = zipfile.ZipFile(comic_path, 'r')
-		# for f in cbz.namelist():
-		# 	print "lala"
-		# 	# If file match standard cbz file (<digits>.jpg) extract it
-		# 	if re.match("^\d*.jpg$", f): 
-		# 		print "inside"
-		# 		cbz.extract(f, cbz_work_dir)
-		# cbz.close()
-		
-		os.chdir(cbz_work_dir)
-		subprocess.call("unzip -j %s >/dev/null" % (comic_path), shell=True)
-		
+		print comic_path
+		cbz = zipfile.ZipFile(comic_path, 'r')
+		for member in cbz.namelist():
+			fname = os.path.basename(member)
+			# If dir/<file> match standard cbz file (<digits>.jpg) extract it
+			#if re.match("^\d*.jpg$", fname): 
+			# skip directories
+			if not fname: continue
+
+			# copy file
+			source = cbz.open(member)
+			target = file(os.path.join(cbz_work_dir, fname), "wb")
+			shutil.copyfileobj(source, target)
+			source.close()
+			target.close()
+		cbz.close()
+				
 		# 2. Split
 		if args.split:
 			for f in os.listdir(cbz_work_dir):
 				subprocess.call("mogrify -format jpg -crop 50%%x100%% %s/%s" % (cbz_work_dir, f), shell=True)
+				
+			# Renumber files to xxx.jpg
+			# filecount = 0
+			# for f in os.listdir(cbz_work_dir):
+			# 	os.rename("%s/%s" % (cbz_work_dir, f),"%s/%03d.jpg" % (cbz_work_dir, filecount))
+			# 	filecount+=1
 			
+			i = -1
 			filecount = 0
-			for f in os.listdir(cbz_work_dir):
-				os.rename("%s/%s" % (cbz_work_dir, f),
-				          "%s/%03d.jpg" % (cbz_work_dir, filecount))
-				filecount+=1
-		
+			file_list = os.listdir(cbz_work_dir)
+			maxf = len(file_list)
+			
+			while (i < maxf):
+				i += 2
+				if not i >= maxf:
+					print file_list[i], filecount
+					os.rename("%s/%s" % (cbz_work_dir, file_list[i]),"%s/%03d.jpg" % (cbz_work_dir, filecount))
+					filecount += 1
+					print file_list[i-1], filecount
+					os.rename("%s/%s" % (cbz_work_dir, file_list[i-1]),"%s/%03d.jpg" % (cbz_work_dir, filecount))
+					filecount += 1
+				
 		# 3. Trim
 		if args.trim:	
 			for f in os.listdir(cbz_work_dir):
 				fpath = "%s/%s" % (cbz_work_dir, f)
-				subprocess.call("convert %s -chop 5x5 -rotate 180 -chop 25x5 -rotate 180 %s" % (fpath,fpath), shell=True)
+				subprocess.call("convert %s -chop 5x5 -rotate 180 -chop 20x5 -rotate 180 %s" % (fpath,fpath), shell=True)
 				subprocess.call("convert %s -fuzz 40%% -trim +repage %s" % (fpath, fpath), shell=True)
 				
 		# 4. Boost contrast
 		# ...
 		
 		# 9. Recompress
-		# http://bip.weizmann.ac.il/course/python/PyMOTW/PyMOTW/docs/zipfile/index.html
-		#TODO import zipfile properly
-		# (dirName, fileName) = os.path.split(comic_path)
-		# 	new_cbz = zipfile.ZipFile('%s/%s' % (args.destination, fileName), 'w', zipfile.ZIP_DEFLATED)
-		# 	os.chdir(cbz_work_dir)
-		# 	for f in os.listdir(cbz_work_dir):
-		# 		new_cbz.write(f)
-		# 	new_cbz.close()
-		
-		os.chdir(cbz_work_dir)
-		subprocess.call("zip %s/%s *" % (args.destination, cbz_name), shell=True)
-		
+		new_cbz = zipfile.ZipFile('%s/%s' % (args.destination, cbz_name), 'w', zipfile.ZIP_DEFLATED)
+		for fname in os.listdir(cbz_work_dir):
+			f = os.path.join(cbz_work_dir, fname)
+			new_cbz.write(f, arcname = fname)
+		new_cbz.close()
+
 		# 10. Cleanup
-		shutil.rmtree(cbz_work_dir)
+		#shutil.rmtree(cbz_work_dir)
 		
 		
 
