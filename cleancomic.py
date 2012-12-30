@@ -91,7 +91,7 @@ def doCompress(work_dir, dest, cbz_name):
 		
 def doSplit(work_dir, rtl):
 	for f in os.listdir(work_dir):
-		subprocess.call("mogrify -format jpg -crop 50%%x100%% %s/%s" % (work_dir, f), shell=True)
+		subprocess.call("mogrify -format jpg -crop 50%%x100%% '%s/%s'" % (work_dir, f), shell=True)
 		
 	# Renumber files to xxx.jpg
 	filecount = 0
